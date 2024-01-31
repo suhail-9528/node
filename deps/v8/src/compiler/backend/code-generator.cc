@@ -104,10 +104,9 @@ CodeGenerator::CodeGenerator(Zone* codegen_zone, Frame* frame, Linkage* linkage,
   masm_.set_builtin(builtin);
 }
 
-void CodeGenerator::AddProtectedInstructionLanding(uint32_t instr_offset,
-                                                   uint32_t landing_offset) {
+void CodeGenerator::RecordProtectedInstruction(uint32_t instr_offset) {
 #if V8_ENABLE_WEBASSEMBLY
-  protected_instructions_.push_back({instr_offset, landing_offset});
+  protected_instructions_.push_back({instr_offset});
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
@@ -293,7 +292,7 @@ void CodeGenerator::AssembleCode() {
         buffer << " (in loop " << block->loop_header().ToInt() << ")";
       }
       buffer << " --";
-      masm()->RecordComment(buffer.str().c_str());
+      masm()->RecordComment(buffer.str().c_str(), SourceLocation());
     }
 
     frame_access_state()->MarkHasFrame(block->needs_frame());
@@ -483,9 +482,6 @@ MaybeHandle<Code> CodeGenerator::FinalizeCode() {
   Handle<ByteArray> source_positions =
       source_position_table_builder_.ToSourcePositionTable(isolate());
 
-  // Allocate deoptimization data.
-  Handle<DeoptimizationData> deopt_data = GenerateDeoptimizationData();
-
   // Allocate and install the code.
   CodeDesc desc;
   masm()->GetCode(isolate()->main_thread_local_isolate(), &desc, safepoints(),
@@ -501,17 +497,21 @@ MaybeHandle<Code> CodeGenerator::FinalizeCode() {
     unwinding_info_writer_.eh_frame_writer()->GetEhFrame(&desc);
   }
 
-  MaybeHandle<Code> maybe_code =
-      Factory::CodeBuilder(isolate(), desc, info()->code_kind())
-          .set_builtin(info()->builtin())
-          .set_inlined_bytecode_size(info()->inlined_bytecode_size())
-          .set_source_position_table(source_positions)
-          .set_deoptimization_data(deopt_data)
-          .set_is_turbofanned()
-          .set_stack_slots(frame()->GetTotalFrameSlotCount())
-          .set_profiler_data(info()->profiler_data())
-          .set_osr_offset(info()->osr_offset())
-          .TryBuild();
+  Factory::CodeBuilder builder(isolate(), desc, info()->code_kind());
+  builder.set_builtin(info()->builtin())
+      .set_inlined_bytecode_size(info()->inlined_bytecode_size())
+      .set_source_position_table(source_positions)
+      .set_is_turbofanned()
+      .set_stack_slots(frame()->GetTotalFrameSlotCount())
+      .set_profiler_data(info()->profiler_data())
+      .set_osr_offset(info()->osr_offset());
+
+  if (info()->code_kind() == CodeKind::TURBOFAN) {
+    // Deoptimization data is only used in this case.
+    builder.set_deoptimization_data(GenerateDeoptimizationData());
+  }
+
+  MaybeHandle<Code> maybe_code = builder.TryBuild();
 
   Handle<Code> code;
   if (!maybe_code.ToHandle(&code)) {
@@ -533,8 +533,8 @@ bool CodeGenerator::IsNextInAssemblyOrder(RpoNumber block) const {
       .IsNext(instructions()->InstructionBlockAt(block)->ao_number());
 }
 
-void CodeGenerator::RecordSafepoint(ReferenceMap* references) {
-  auto safepoint = safepoints()->DefineSafepoint(masm());
+void CodeGenerator::RecordSafepoint(ReferenceMap* references, int pc_offset) {
+  auto safepoint = safepoints()->DefineSafepoint(masm(), pc_offset);
   int frame_header_offset = frame()->GetFixedSlotCount();
   for (const InstructionOperand& operand : references->reference_operands()) {
     if (operand.IsStackSlot()) {
@@ -853,7 +853,7 @@ void CodeGenerator::AssembleSourcePosition(SourcePosition source_position) {
       buffer << source_position.InliningStack(masm()->isolate(), info);
     }
     buffer << " --";
-    masm()->RecordComment(buffer.str().c_str());
+    masm()->RecordComment(buffer.str().c_str(), SourceLocation());
   }
 }
 
@@ -915,7 +915,7 @@ Handle<DeoptimizationData> CodeGenerator::GenerateDeoptimizationData() {
     return DeoptimizationData::Empty(isolate());
   }
   Handle<DeoptimizationData> data =
-      DeoptimizationData::New(isolate(), deopt_count, AllocationType::kOld);
+      DeoptimizationData::New(isolate(), deopt_count);
 
   Handle<DeoptimizationFrameTranslation> translation_array =
       translations_.ToFrameTranslation(

@@ -74,6 +74,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
  public:
   using SharedMacroAssembler<MacroAssembler>::SharedMacroAssembler;
 
+  void MemoryChunkHeaderFromObject(Register object, Register header);
   void CheckPageFlag(Register object, Register scratch, int mask, Condition cc,
                      Label* condition_met,
                      Label::Distance condition_met_distance = Label::kFar);
@@ -119,6 +120,9 @@ class V8_EXPORT_PRIVATE MacroAssembler
 
   // Check that the stack is aligned.
   void CheckStackAlignment();
+
+  // Align to natural boundary
+  void AlignStackPointer();
 
   // Move a constant into a destination using the most efficient encoding.
   void Move(Register dst, int32_t x) {
@@ -299,6 +303,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
   void LoadFromConstantsTable(Register destination, int constant_index) final;
   void LoadRootRegisterOffset(Register destination, intptr_t offset) final;
   void LoadRootRelative(Register destination, int32_t offset) final;
+  void StoreRootRelative(int32_t offset, Register value) final;
 
   void PushPC();
 
@@ -525,6 +530,14 @@ class V8_EXPORT_PRIVATE MacroAssembler
     add(reg, reg);
   }
 
+  // Simple comparison of smis.  Both sides must be known smis to use these,
+  // otherwise use Cmp.
+  void SmiCompare(Register smi1, Register smi2);
+  void SmiCompare(Register dst, Tagged<Smi> src);
+  void SmiCompare(Register dst, Operand src);
+  void SmiCompare(Operand dst, Register src);
+  void SmiCompare(Operand dst, Smi src);
+
   // Jump if register contain a non-smi.
   inline void JumpIfNotSmi(Register value, Label* not_smi_label,
                            Label::Distance distance = Label::kFar) {
@@ -568,6 +581,7 @@ class V8_EXPORT_PRIVATE MacroAssembler
 
   // Abort execution if argument is not a smi, enabled via --debug-code.
   void AssertSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertSmi(Operand object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is a smi, enabled via --debug-code.
   void AssertNotSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
@@ -660,6 +674,8 @@ class V8_EXPORT_PRIVATE MacroAssembler
   // ---------------------------------------------------------------------------
   // Stack limit utilities
   void CompareStackLimit(Register with, StackLimitKind kind);
+  Operand StackLimitAsOperand(StackLimitKind kind);
+
   void StackOverflowCheck(Register num_args, Register scratch,
                           Label* stack_overflow, bool include_receiver = false);
 

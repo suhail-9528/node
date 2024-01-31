@@ -24,9 +24,19 @@ Tagged<ByteArray> Code::raw_position_table() const {
   return TaggedField<ByteArray, kPositionTableOffset>::load(*this);
 }
 
-Tagged<HeapObject> Code::raw_deoptimization_data_or_interpreter_data() const {
-  return TaggedField<HeapObject,
-                     kDeoptimizationDataOrInterpreterDataOffset>::load(*this);
+Tagged<Object> Code::raw_deoptimization_data_or_interpreter_data(
+    IsolateForSandbox isolate) const {
+#ifdef V8_ENABLE_SANDBOX
+  Tagged<Object> value =
+      RawIndirectPointerField(kDeoptimizationDataOrInterpreterDataOffset,
+                              kUnknownIndirectPointerTag)
+          .load(isolate);
+#else
+  Tagged<Object> value =
+      TaggedField<HeapObject, kDeoptimizationDataOrInterpreterDataOffset>::load(
+          *this);
+#endif
+  return value;
 }
 
 void Code::ClearEmbeddedObjects(Heap* heap) {

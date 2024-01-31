@@ -127,8 +127,8 @@ class LoadHandler final : public DataHandler {
   // Encoding when KindBits contains kElement and IsWasmArrayBits is 0.
   //
   using IsJsArrayBits = IsWasmArrayBits::Next<bool, 1>;
-  using ConvertHoleBits = IsJsArrayBits::Next<bool, 1>;
-  using ElementsKindBits = ConvertHoleBits::Next<ElementsKind, 8>;
+  using AllowHandlingHole = IsJsArrayBits::Next<bool, 1>;
+  using ElementsKindBits = AllowHandlingHole::Next<ElementsKind, 8>;
   // Make sure we don't overflow the smi.
   static_assert(ElementsKindBits::kLastUsedBit < kSmiValueSize);
 
@@ -217,7 +217,6 @@ class LoadHandler final : public DataHandler {
   // Creates a Smi-handler for loading an element.
   static inline Handle<Smi> LoadElement(Isolate* isolate,
                                         ElementsKind elements_kind,
-                                        bool convert_hole_to_undefined,
                                         bool is_js_array,
                                         KeyedAccessLoadMode load_mode);
 
@@ -367,7 +366,8 @@ class StoreHandler final : public DataHandler {
 
   // Creates a Smi-handler for storing a property.
   static inline Handle<Smi> StoreSlow(
-      Isolate* isolate, KeyedAccessStoreMode store_mode = STANDARD_STORE);
+      Isolate* isolate,
+      KeyedAccessStoreMode store_mode = KeyedAccessStoreMode::kInBounds);
 
   // Creates a Smi-handler for storing a property on a proxy.
   static inline Handle<Smi> StoreProxy(Isolate* isolate);
